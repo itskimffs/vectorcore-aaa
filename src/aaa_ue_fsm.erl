@@ -1,6 +1,10 @@
 % UE FSM
 % (C) 2023 by sysmocom
 %
+% Modified by itskimffs (2026-10), see NOTICE.md:
+%   - SWx MAR without SIP-Authorization on a first (non-resync) authentication
+%   - SWm/S6b STR answered per session; several PDN connections per UE (aaa_sessions)
+%
 % All Rights Reserved
 %
 % This program is free software; you can redistribute it and/or modify

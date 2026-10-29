@@ -3,6 +3,9 @@
 % 3GPP TS 29.273 section 9
 %
 % (C) 2023 by sysmocom - s.f.m.c. GmbH <info@sysmocom.de>
+%
+% Modified by itskimffs (2026-10), see NOTICE.md:
+%   - SWm/S6b STR answered per session; several PDN connections per UE (aaa_sessions)
 % Author: Pau Espin Pedrol <pespin@sysmocom.de>
 %
 % All Rights Reserved
