@@ -4,8 +4,6 @@
 
 -module(diameter_3gpp_ts29_273_swm).
 
--moduledoc(false).
-
 -compile({parse_transform, diameter_exprecs}).
 
 -compile(nowarn_unused_function).
@@ -307,7 +305,10 @@
          'Origin-Realm',
          'Destination-Realm',
          'Termination-Cause',
+         'DRMP' = [],
+         'Destination-Host' = [],
          'User-Name' = [],
+         'OC-Supported-Features' = [],
          'AVP' = []}).
 
 -record('STA',
@@ -4267,7 +4268,10 @@ avp_arity('STR') ->
      {'Origin-Realm', 1},
      {'Destination-Realm', 1},
      {'Termination-Cause', 1},
+     {'DRMP', {0, 1}},
+     {'Destination-Host', {0, 1}},
      {'User-Name', {0, 1}},
+     {'OC-Supported-Features', {0, 1}},
      {'AVP', {0, '*'}}];
 avp_arity('STA') ->
     [{'Session-Id', 1},
@@ -5810,7 +5814,10 @@ avp_arity('STR', 'Origin-Host') -> 1;
 avp_arity('STR', 'Origin-Realm') -> 1;
 avp_arity('STR', 'Destination-Realm') -> 1;
 avp_arity('STR', 'Termination-Cause') -> 1;
+avp_arity('STR', 'DRMP') -> {0, 1};
+avp_arity('STR', 'Destination-Host') -> {0, 1};
 avp_arity('STR', 'User-Name') -> {0, 1};
+avp_arity('STR', 'OC-Supported-Features') -> {0, 1};
 avp_arity('STR', 'AVP') -> {0, '*'};
 avp_arity('STA', 'Session-Id') -> 1;
 avp_arity('STA', 'Result-Code') -> 1;
@@ -20685,7 +20692,10 @@ dict() ->
          {"Origin-Realm"},
          {"Destination-Realm"},
          {"Termination-Cause"},
+         ["DRMP"],
+         ["Destination-Host"],
          ["User-Name"],
+         ["OC-Supported-Features"],
          {'*', ["AVP"]}]},
        {"STA",
         275,

@@ -96,7 +96,10 @@ STR ::= < Diameter Header: 275, REQ, PXY >
         { Origin-Realm }
         { Destination-Realm }
         { Termination-Cause }
+        [ DRMP ]
+        [ Destination-Host ]
         [ User-Name ]
+        [ OC-Supported-Features ]
       * [ AVP ]
 
 STA ::= < Diameter Header: 275, PXY >

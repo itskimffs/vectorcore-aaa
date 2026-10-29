@@ -112,6 +112,13 @@ handle_request(#diameter_packet{msg = Req, errors = []}, _SvcName, {_, Caps}) wh
 			end
 		end
 	end,
+	%% The SWm session counts as active once EAP succeeded (MSK handed to the ePDG)
+	case Resp of
+	#'DEA'{'EAP-Master-Session-Key' = MSK} when is_binary(MSK) ->
+		aaa_sessions:add(swm_sessions, SessionId, Imsi);
+	_ ->
+		ok
+	end,
 	lager:info("SWm DEA Tx to ~p: ~p~n", [Caps, redact_dea_for_log(Resp)]),
 	{reply, Resp};
 
@@ -148,13 +155,21 @@ handle_request(#diameter_packet{msg = Req, errors = []}, _SvcName, {_, Caps}) wh
 	#diameter_caps{origin_host = {OH, _}, origin_realm = {OR, _}} = Caps,
 	#'STR'{'Session-Id' = SessionId,
 	       'User-Name' = UserNameOpt} = Req,
-	NAI = user_name(UserNameOpt),
-	Imsi = imsi_from_nai(NAI),
-	Result = case aaa_ue_fsm:get_pid_by_imsi(Imsi) of
-		Pid when is_pid(Pid) ->
-			run_pending(Imsi, sta, fun() -> aaa_ue_fsm:ev_rx_access_session_termination(Pid, swm) end);
-		undefined ->
-			{error, ?DIAMETER_UNKNOWN_SESSION_ID}
+	Result = case aaa_sessions:take(swm_sessions, SessionId) of
+		{ok, Imsi, Left} when Left > 0 ->
+			%% Other PDN connections (own SWm sessions) of this UE are still up, or this is
+			%% the old session after a re-attach: release only this one.
+			lager:info("SWm STR for ~p (IMSI ~p): ~p other SWm session(s) still active, UE state kept~n",
+				   [SessionId, Imsi, Left]),
+			{ok, ?DIAMETER_SUCCESS};
+		{ok, Imsi, 0} ->
+			terminate_last_swm(Imsi);
+		unknown ->
+			%% Not tracked (e.g. established before an AAA restart): fall back to the User-Name
+			case imsi_from_nai(user_name(UserNameOpt)) of
+			Empty when Empty =:= ""; Empty =:= <<>> -> {error, ?DIAMETER_UNKNOWN_SESSION_ID};
+			Imsi -> terminate_last_swm(Imsi)
+			end
 	end,
 	Resp = #'STA'{'Session-Id' = SessionId,
 		      'Result-Code' = result_code(Result),
@@ -163,8 +178,23 @@ handle_request(#diameter_packet{msg = Req, errors = []}, _SvcName, {_, Caps}) wh
 	lager:info("SWm STA Tx to ~p: ~p~n", [Caps, Resp]),
 	{reply, Resp};
 
+%% With request_errors = answer_3xxx the diameter app only accepts {answer_message, 3xxx}; a
+%% 5xxx answer_message is an invalid_return, the handler process crashes and no answer is sent.
+%% Answer a malformed STR with an STA carrying the error instead.
+handle_request(#diameter_packet{msg = Req, errors = Errors}, _SvcName, {_, Caps} = Peer)
+		when is_record(Req, 'STR') ->
+	lager:error("SWm malformed request from ~p errors ~p: ~p~n", [Peer, Errors, Req]),
+	#diameter_caps{origin_host = {OH, _}, origin_realm = {OR, _}} = Caps,
+	#'STR'{'Session-Id' = SessionId} = Req,
+	Resp = #'STA'{'Session-Id' = SessionId,
+		      'Result-Code' = malformed_result(Errors),
+		      'Origin-Host' = OH,
+		      'Origin-Realm' = OR},
+	lager:info("SWm STA error Tx to ~p: ~p~n", [Caps, Resp]),
+	{reply, Resp};
+
 handle_request(#diameter_packet{msg = Req, errors = Errors}, _SvcName, Peer)
-		when is_record(Req, 'AAR'); is_record(Req, 'STR') ->
+		when is_record(Req, 'AAR') ->
 	lager:error("SWm malformed request from ~p errors ~p: ~p~n", [Peer, Errors, Req]),
 	{answer_message, ?DIAMETER_UNABLE_TO_COMPLY};
 
@@ -273,6 +303,20 @@ result_code(#epdg_dia_rc{result_code = ResultCode}) -> ResultCode;
 result_code({error, ResultCode}) when is_integer(ResultCode) -> ResultCode;
 result_code(ResultCode) when is_integer(ResultCode) -> ResultCode;
 result_code(_) -> ?DIAMETER_AUTHORIZATION_REJECTED.
+
+%% Last SWm session of the UE: the FSM ends the access session (and deregisters at the HSS
+%% when no S6b session is left either).
+terminate_last_swm(Imsi) ->
+	case aaa_ue_fsm:get_pid_by_imsi(Imsi) of
+	Pid when is_pid(Pid) ->
+		run_pending(Imsi, sta, fun() -> aaa_ue_fsm:ev_rx_access_session_termination(Pid, swm) end);
+	undefined ->
+		{error, ?DIAMETER_UNKNOWN_SESSION_ID}
+	end.
+
+malformed_result([{Code, _} | _]) when is_integer(Code) -> Code;
+malformed_result([Code | _]) when is_integer(Code) -> Code;
+malformed_result(_) -> ?DIAMETER_UNABLE_TO_COMPLY.
 
 malformed_der_result(Errors) ->
 	case lists:any(fun is_missing_avp_error/1, Errors) of

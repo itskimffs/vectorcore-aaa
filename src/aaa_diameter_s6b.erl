@@ -119,6 +119,7 @@ peer_down(_API, SvcName, {_PeerRef, _} = Peer) ->
 
 init([]) ->
     TxTimer = application:get_env(?ENV_APP_NAME, dia_s6b_transmit_timer, ?ENV_DEFAULT_DIAMETER_TRANSMIT_TIMER_MS),
+    aaa_sessions:new(s6b_sessions),
     {ok, #s6b_state{tx_timeout = TxTimer}}.
 
 tx_aa_answer(Pid, DiaRC) ->
