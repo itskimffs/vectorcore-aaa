@@ -72,7 +72,10 @@
          'Origin-Realm',
          'Destination-Realm',
          'Termination-Cause',
+         'DRMP' = [],
+         'Destination-Host' = [],
          'User-Name' = [],
+         'OC-Supported-Features' = [],
          'AVP' = []}).
 
 -record('STA',

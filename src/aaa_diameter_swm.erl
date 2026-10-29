@@ -110,6 +110,7 @@ start_link() ->
 init([]) ->
 	TxTimer = application:get_env(?ENV_APP_NAME, dia_swm_transmit_timer, ?ENV_DEFAULT_DIAMETER_TRANSMIT_TIMER_MS),
 	TableId = ets:new(auth_req, [bag, named_table]),
+	aaa_sessions:new(swm_sessions),
 	{ok, #swm_state{table_id = TableId, tx_timeout = TxTimer}}.
 
 register_pending(Imsi, Kind, Pid) ->

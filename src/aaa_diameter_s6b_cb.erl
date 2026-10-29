@@ -149,6 +149,10 @@ handle_request(#diameter_packet{msg = Req, errors = Errors}, _SvcName, {_, Caps}
         lager:error("S6b AAR has non-ignorable Diameter validation errors: ~p~n", [Errors]),
         #epdg_dia_rc{result_code = ?DIAMETER_UNABLE_TO_COMPLY}
     end,
+    case DiaRC#epdg_dia_rc.result_code of
+    2001 -> aaa_sessions:add(s6b_sessions, SessionId, normalize_imsi(conv:nai_to_imsi(NAI)));
+    _ -> ok
+    end,
     AuthzFields = s6b_aaa_authz_fields(DiaRC, Apn),
     Resp0 = #'AAA'{'Session-Id'= SessionId,
                   'Auth-Application-Id' = AuthAppId,
@@ -172,7 +176,14 @@ handle_request(#diameter_packet{msg = Req, errors = Errors}, _SvcName, {_, Caps}
            'User-Name' = [UserName]} = Req,
     Imsi = normalize_imsi(conv:nai_to_imsi(UserName)),
     PidRes = aaa_ue_fsm:get_pid_by_imsi(Imsi),
+    Tracked = aaa_sessions:take(s6b_sessions, SessionId),
     case {acceptable_request_errors(Errors), PidRes} of
+    {true, _} when element(1, Tracked) =:= ok, element(3, Tracked) > 0 ->
+        %% Other PDN connections of this UE still have S6b sessions: release only this one
+        %% (TS 29.273 9.1.2.3.3) and leave the UE state alone.
+        lager:info("S6b STR for ~p (IMSI ~p): ~p other S6b session(s) still active, UE state kept~n",
+                   [SessionId, Imsi, element(3, Tracked)]),
+        ResultCode = ?DIAMETER_SUCCESS;
     {true, PidRes} when is_pid(PidRes) ->
         case aaa_ue_fsm:ev_rx_s6b_str(PidRes) of
         ok ->

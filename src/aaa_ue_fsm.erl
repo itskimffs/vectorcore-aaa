@@ -633,6 +633,23 @@ terminate(Reason, State, Data) ->
         lager:info("terminating ~p with reason ~p state=~p, ~p~n", [?MODULE, Reason, State, Data]),
         ok.
 
+%% S6b STR or SWm STR that reaches the FSM while it is (re-)authenticating another PDN connection
+%% of the same UE (state_new / state_wait_swx_maa / state_wait_swx_saa after leaving
+%% state_authenticated). The other side's session is still up, so only this one is released and
+%% the ongoing authentication is left alone. Without these clauses the call either got
+%% UNKNOWN_SESSION_ID for a session that exists, or hit no clause and crashed the FSM (S6b then
+%% answered 5003 and the SMF never released the PDN connection).
+release_s6b_during_auth(StateName, From, Data) ->
+        lager:info("ue_fsm ~p event=rx_s6b_str while another PDN connection is authenticating, releasing it, ~p~n",
+                   [StateName, Data]),
+        {keep_state, Data#ue_fsm_data{pgw_sess_active = false},
+         [{reply, From, {ok, #epdg_dia_rc{result_code = 2001}}}]}.
+
+release_access_during_auth(StateName, From, AccessIf, Data) ->
+        lager:info("ue_fsm ~p event=rx_access_session_termination access_if=~p while authenticating, releasing it, ~p~n",
+                   [StateName, AccessIf, Data]),
+        {keep_state, Data, [{reply, From, {ok, 2001}}]}.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% state_new:
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -696,6 +713,12 @@ state_new({call, From}, {rx_s6b_aar, NAI, Apn, AgentInfoOpt, Mip6FeatureVectorOp
                    [NAI, Apn, AgentInfoOpt, Mip6FeatureVectorOpt, Data]),
         handle_s6b_aar(From, NAI, Apn, AgentInfoOpt, Mip6FeatureVectorOpt, Data);
 
+state_new({call, From}, rx_s6b_str, #ue_fsm_data{pgw_sess_active = true} = Data) ->
+        release_s6b_during_auth(state_new, From, Data);
+
+state_new({call, From}, {rx_access_session_termination, AccessIf}, Data) ->
+        release_access_during_auth(state_new, From, AccessIf, Data);
+
 state_new({call, From}, rx_s6b_str, Data) ->
         lager:info("ue_fsm state_new event=rx_s6b_str without active S6b session, ~p~n", [Data]),
         DiaRC = #epdg_dia_rc{result_code = 5002}, %% UNKNOWN_SESSION_ID
@@ -733,6 +756,12 @@ state_wait_swx_maa({call, _From}, {rx_s6b_aar, NAI, Apn, AgentInfoOpt, Mip6Featu
         lager:info("ue_fsm state_wait_swx_maa event=rx_s6b_aar postponed until access auth completes NAI=~p Apn=~p AgentInfo=~p Mip6FeatureVector=~p, ~p~n",
                    [NAI, Apn, AgentInfoOpt, Mip6FeatureVectorOpt, Data]),
         {keep_state, Data, [postpone]};
+
+state_wait_swx_maa({call, From}, rx_s6b_str, #ue_fsm_data{pgw_sess_active = true} = Data) ->
+        release_s6b_during_auth(state_wait_swx_maa, From, Data);
+
+state_wait_swx_maa({call, From}, {rx_access_session_termination, AccessIf}, Data) ->
+        release_access_during_auth(state_wait_swx_maa, From, AccessIf, Data);
 
 state_wait_swx_maa({call, From}, rx_s6b_str, Data) ->
         lager:info("ue_fsm state_wait_swx_maa event=rx_s6b_str without active S6b session, ~p~n", [Data]),
@@ -788,6 +817,12 @@ state_wait_swx_saa({call, _From}, {rx_s6b_aar, NAI, Apn, AgentInfoOpt, Mip6Featu
         lager:info("ue_fsm state_wait_swx_saa event=rx_s6b_aar postponed until access auth completes NAI=~p Apn=~p AgentInfo=~p Mip6FeatureVector=~p, ~p~n",
                    [NAI, Apn, AgentInfoOpt, Mip6FeatureVectorOpt, Data]),
         {keep_state, Data, [postpone]};
+
+state_wait_swx_saa({call, From}, rx_s6b_str, #ue_fsm_data{pgw_sess_active = true} = Data) ->
+        release_s6b_during_auth(state_wait_swx_saa, From, Data);
+
+state_wait_swx_saa({call, From}, {rx_access_session_termination, AccessIf}, Data) ->
+        release_access_during_auth(state_wait_swx_saa, From, AccessIf, Data);
 
 state_wait_swx_saa({call, From}, rx_s6b_str, Data) ->
         lager:info("ue_fsm state_wait_swx_saa event=rx_s6b_str without active S6b session, ~p~n", [Data]),
@@ -941,6 +976,18 @@ state_authenticated_wait_swx_saa({call, From}, {rx_swx_saa, Result}, Data) ->
                         {next_state, state_new, Data1, [{reply,From,ok}]}
                 end
         end;
+
+%% Termination or new authorization of another PDN connection while the SAA is outstanding:
+%% handle it once the SAA has moved the FSM on (previously these calls hit no clause and
+%% crashed the FSM).
+state_authenticated_wait_swx_saa({call, _From}, Ev, Data)
+  when Ev =:= rx_s6b_str;
+       element(1, Ev) =:= rx_access_session_termination;
+       element(1, Ev) =:= rx_access_auth_request;
+       element(1, Ev) =:= rx_s6b_aar ->
+        lager:info("ue_fsm state_authenticated_wait_swx_saa event=~p postponed until SAA, ~p~n",
+                   [element(1, if is_tuple(Ev) -> Ev; true -> {Ev} end), Data]),
+        {keep_state, Data, [postpone]};
 
 state_authenticated_wait_swx_saa({call, From}, rx_swx_rtr, Data) ->
     lager:info("ue_fsm state_authenticated_wait_swx_saa event=rx_swx_rtr ~p~n", [Data]),
