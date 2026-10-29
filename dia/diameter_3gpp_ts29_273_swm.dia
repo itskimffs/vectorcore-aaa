@@ -1,3 +1,9 @@
+;; This file is part of VectorCore AAA, licensed under the GNU Affero General
+;; Public License version 3 or later (see COPYING).
+;;
+;; Modified by itskimffs (2026-10), see NOTICE.md:
+;;   - SWm STR grammar: DRMP, Destination-Host, OC-Supported-Features (TS 29.273 7.2.2.2.1)
+;;
 ;;
 ;; 3GPP TS 29.273 SWm application dictionary.
 ;;

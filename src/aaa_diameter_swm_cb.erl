@@ -1,3 +1,9 @@
+% This file is part of VectorCore AAA, licensed under the GNU Affero General
+% Public License version 3 or later (see COPYING).
+%
+% Modified by itskimffs (2026-10), see NOTICE.md:
+%   - SWm/S6b STR answered per session; several PDN connections per UE (aaa_sessions)
+%
 %%
 %% SWm Diameter application callback, AAA side.
 %%
