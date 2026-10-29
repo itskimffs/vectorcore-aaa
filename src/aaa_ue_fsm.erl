@@ -664,7 +664,7 @@ state_new({call, From}, {rx_access_auth_request, AccessIf, AccessType, GatewayHo
 	                                  access_auth_final = is_eap_aka_challenge_response(Authorization)},
 	        case aaa_diameter_swx:multimedia_auth_request(Data#ue_fsm_data.imsi, 1, 1,
 	                                                      swx_auth_scheme(AccessIf),
-	                                                      PdpTypeNr, Authorization,
+	                                                      PdpTypeNr, [], %% local: fresh auth sends no SIP-Authorization (raw EAP identity was misread by HSS as AKA resync)
 	                                                      swx_auth_context(AccessIf)) of
 	        ok -> {next_state, state_wait_swx_maa, Data1, [{reply,From,ok}]};
 	        {error, Err} -> {keep_state, Data1, [{reply,From,{error, Err}}]}
